@@ -1,0 +1,43 @@
+"""
+Barcode Generator API
+Generate barcode images (Code128, EAN13, EAN8).
+"""
+import io, base64, tempfile, os
+from typing import Optional
+from fastapi import APIRouter, Query
+from fastapi.responses import Response
+from pydantic import BaseModel
+import barcode
+from barcode.writer import ImageWriter
+
+router = APIRouter()
+
+@router.api_route("/health", methods=["GET", "HEAD"])
+async def health():
+    return {"status": "ok"}
+
+FORMATS = {"code128": barcode.Code128, "ean13": barcode.EAN13, "ean8": barcode.EAN8}
+
+@router.get("/")
+async def root():
+    return {"service": "Barcode Generator API", "version": "1.1.0", "related": ["QR Code Generator API"]}
+
+@router.get("/generate")
+async def generate(
+    data: str = Query(..., description="Text to encode"),
+    fmt: str = Query("code128", description="Format: code128, ean13, ean8"),
+    output: str = Query("png", description="Output: png or base64"),
+):
+    if fmt not in FORMATS:
+        fmt = "code128"
+    bc = FORMATS[fmt](data, writer=ImageWriter())
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        tmp_path = tmp.name
+    bc.save(tmp_path[:-4])
+    png_path = tmp_path[:-4] + ".png"
+    with open(png_path, "rb") as f:
+        img_data = f.read()
+    os.unlink(png_path)
+    if output == "base64":
+        return {"barcode": "data:image/png;base64," + base64.b64encode(img_data).decode()}
+    return Response(content=img_data, media_type="image/png")
